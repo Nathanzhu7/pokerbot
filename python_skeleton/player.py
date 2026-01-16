@@ -9,6 +9,12 @@ from skeleton.runner import parse_args, run_bot
 
 import random
 
+# from poker import Deck, Card
+# from poker.hand import Combo
+import pkrbot
+
+from utils import best_discard_index, mc_equity
+from helpers import calculate_strength, get_betting_action
 
 class Player(Bot):
     '''
@@ -101,21 +107,49 @@ class Player(Bot):
 
         # Only use DiscardAction if it's in legal_actions (which already checks street)
         # legal_actions() returns DiscardAction only when street is 2 or 3
+
+        # ---------------------------------------------------------------------
+        # 1. DISCARD LOGIC
+        # ---------------------------------------------------------------------
+
         if DiscardAction in legal_actions:
-            # Always discards the first card in the bot's hand
-            return DiscardAction(0)
-        if RaiseAction in legal_actions:
-            # the smallest and largest numbers of chips for a legal bet/raise
-            min_raise, max_raise = round_state.raise_bounds()
-            min_cost = min_raise - my_pip  # the cost of a minimum bet/raise
-            max_cost = max_raise - my_pip  # the cost of a maximum bet/raise
-            if random.random() < 0.5:
-                return RaiseAction(min_raise)
-        if CheckAction in legal_actions:  # check-call
-            return CheckAction()
-        if random.random() < 0.25:
-            return FoldAction()
-        return CallAction()
+            best_discard_idx = best_discard_index(my_cards, board_cards)
+            return DiscardAction(best_discard_idx)
+
+        # 2. METRICS
+        strength = calculate_strength(my_cards, board_cards, game_state.game_clock)
+        pot_total = (STARTING_STACK - my_stack) + (STARTING_STACK - opp_stack)
+
+        if continue_cost > 0:
+            pot_odds = continue_cost / (pot_total + continue_cost)
+        else:
+            pot_odds = 0
+
+        # 3. DECISION (Delegate to helpers.py)
+        return get_betting_action(
+            strength, pot_odds, pot_total, continue_cost, legal_actions, round_state
+        )
+
+        from model import PokerPolicy
+    # import torch
+
+    # class Player(Bot):
+    #     def __init__(self):
+    #         # Load the trained brain
+    #         self.brain = PokerPolicy(input_size=106, output_size=4)
+    #         self.brain.load_state_dict(torch.load("smart_brain.pth"))
+    #         self.brain.eval() # Switch to "Test Mode" (No learning)
+
+    #     def get_action(self, ...):
+    #         # 1. See
+    #         state_vector = encode_state(...)
+
+    #         # 2. Think
+    #         probs = self.brain(state_vector)
+
+    #         # 3. Act (Pick the action with highest probability)
+    #         action_idx = torch.argmax(probs).item()
+    #         return self._index_to_action(action_idx)
 
 
 if __name__ == '__main__':
