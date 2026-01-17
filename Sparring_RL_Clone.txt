@@ -1,0 +1,5 @@
+Checkpoint saved: smart_brain_1000.pth
+Checkpoint saved: smart_brain_2000.pth
+Checkpoint saved: smart_brain_3000.pth
+Checkpoint saved: smart_brain_4000.pth
+Checkpoint saved: smart_brain_5000.pth

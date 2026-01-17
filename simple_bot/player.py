@@ -13,19 +13,8 @@ import random
 # from poker.hand import Combo
 import pkrbot
 
-from brain.agent import RLAgent
-from brain.encoder import encode_state
-
-from fixed_actions.preflop import get_preflop_action
-from fixed_actions.discard import best_discard_index
-
-
-import os
-import sys
-import torch
-
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from config import PLAYER_1_NAME, PLAYER_2_NAME
+from utils import best_discard_index, mc_equity
+from helpers import calculate_strength, get_betting_action
 
 class Player(Bot):
     '''
@@ -42,12 +31,7 @@ class Player(Bot):
         Returns:
         Nothing.
         '''
-        self.brain = RLAgent(training_mode=True)
-        self.prev_fc1 = self.brain.policy.fc1.weight.detach().clone()
-        self.chip_delta_sum = 0
-        self.rounds_since_log = 0
-
-        self.buffer = []
+        pass
 
     def handle_new_round(self, game_state, round_state, active):
         '''
@@ -61,7 +45,6 @@ class Player(Bot):
         Returns:
         Nothing.
         '''
-        self.name = PLAYER_1_NAME if active == 0 else PLAYER_2_NAME
         my_bankroll = game_state.bankroll  # the total number of chips you've gained or lost from the beginning of the game to the start of this round
         # the total number of seconds your bot has left to play this game
         game_clock = game_state.game_clock
@@ -82,54 +65,13 @@ class Player(Bot):
         Returns:
         Nothing.
         '''
-        self.chip_delta_sum += terminal_state.deltas[active]
-        self.rounds_since_log += 1
-
         my_delta = terminal_state.deltas[active]  # your bankroll change from this round
         previous_state = terminal_state.previous_state  # RoundState before payoffs
         street = previous_state.street  # 0,2,3,4,5,6 representing when this round ended
         my_cards = previous_state.hands[active]  # your cards
         # opponent's cards or [] if not revealed
         opp_cards = previous_state.hands[1-active]
-        # --- NEW: Call the renamed helper function ---
-        # This makes sure the training actually happens!
-        self._train_brain(game_state, terminal_state, active)
-
-
-    def _train_brain(self, game_state, terminal_state, active):
-        '''
-        The "Renamed" Second Function (Helper)
-        '''
-        # 1. Update the Brain
-        my_delta = terminal_state.deltas[active]
-        self.brain.update_policy(my_delta)
-
-        # 2. Save every 100 rounds
-        # TODO: Remember to change this when i do self play training
-        if game_state.round_num % 100 == 0 and active == 0:
-            with torch.no_grad():
-                curr_fc1 = self.brain.policy.fc1.weight.detach()
-                delta = (curr_fc1 - self.prev_fc1).abs().mean().item()
-                self.prev_fc1 = curr_fc1.clone()
-
-            avg_delta = self.chip_delta_sum / max(1, self.rounds_since_log)
-
-            with open("rl_live.log", "a") as f:
-                f.write(
-                    f"Round {game_state.round_num}: fc1 Δw mean = {delta:.6f}, "
-                    f"avg chip delta/round = {avg_delta:.2f}\n"
-                )
-                f.flush()
-                # reset after logging
-            self.chip_delta_sum = 0
-            self.rounds_since_log = 0
-
-            self.brain.save()
-
-            # Create a checkpoint every 1,000 rounds
-            if game_state.round_num % 1000 == 0:
-                torch.save(self.brain.policy.state_dict(), f"smart_brain_{game_state.round_num}.pth")
-                print(f"Checkpoint saved: smart_brain_{game_state.round_num}.pth")
+        pass
 
     def get_action(self, game_state, round_state, active):
         '''
@@ -174,30 +116,19 @@ class Player(Bot):
             best_discard_idx = best_discard_index(my_cards, board_cards)
             return DiscardAction(best_discard_idx)
 
-        # 2. PRE-FLOP (Fixed Rules)
-        if street == 0:
-            return get_preflop_action(round_state, active)
+        # 2. METRICS
+        strength = calculate_strength(my_cards, board_cards, game_state.game_clock)
+        pot_total = (STARTING_STACK - my_stack) + (STARTING_STACK - opp_stack)
 
-        # 3. POST-FLOP (RL Agent)
-        # Delegate all complex work to the agent class
-        action_idx = self.brain.select_action(
-            my_cards=round_state.hands[active],
-            board=round_state.board,
-            stacks=[round_state.stacks[active], round_state.stacks[1-active]],
-            pips=[round_state.pips[active], round_state.pips[1-active]],
-            street=street,
-            legal_actions=legal_actions
-        )
-
-        if RaiseAction in legal_actions:
-            min_raise, max_raise = round_state.raise_bounds()
+        if continue_cost > 0:
+            pot_odds = continue_cost / (pot_total + continue_cost)
         else:
-            min_raise, max_raise = 0, 0  # won't be used if raise isn't legal
+            pot_odds = 0
 
-        return self.brain.index_to_action(action_idx, legal_actions, min_raise, max_raise)
-
-
-
+        # 3. DECISION (Delegate to helpers.py)
+        return get_betting_action(
+            strength, pot_odds, pot_total, continue_cost, legal_actions, round_state
+        )
 
 if __name__ == '__main__':
     run_bot(Player(), parse_args())

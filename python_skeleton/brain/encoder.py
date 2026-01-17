@@ -21,10 +21,16 @@ def encode_state(my_cards, board_cards, my_stack, opp_stack, my_pip, opp_pip, st
     board_vec = _cards_to_vec(board_cards)
 
     # 2. ENCODE STREET (One-Hot)
-    # We map the engine's street integers to a 4-slot vector
-    # 0: Preflop, 3: Flop, 4: Turn, 5: River
-    street_map = {0: 0, 3: 1, 4: 2, 5: 3}
+    street_map = {
+        0: 0,  # Pre-Flop
+        4: 1,  # Flop Betting
+        5: 2,  # Turn Betting
+        6: 3   # River Betting
+    }
+
     street_vec = [0, 0, 0, 0]
+    if street in street_map:
+        street_vec[street_map[street]] = 1
     if street in street_map:
         street_vec[street_map[street]] = 1
 
